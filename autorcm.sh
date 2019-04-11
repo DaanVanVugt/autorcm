@@ -104,7 +104,7 @@ if [ "$verbose" -ge 1 ]; then
 fi
 
 # constants
-N=2 # Don't know why this version number is used
+N=2 # Indicates the type of job in standard RCM tools
 HOST=login.marconi.cineca.it
 
 # Connect to marconi (with a controlmaster connection)
@@ -138,8 +138,8 @@ function launch_job() {
 # Job script for slurm
 define JOBSCRIPT <<EOT
 #!/bin/bash
-#SBATCH --partition skl_usr_dbg
-#SBATCH --qos=qos_rcm
+#SBATCH --partition knl_fua_prod
+#SBATCH --account=FUA23_AUGJOR
 #SBATCH --time=$timelimit
 #SBATCH --job-name=$user-slurm-$N
 #SBATCH --output /marconi/home/userexternal/$user/.rcm/$user-slurm-$N.joblog
@@ -154,7 +154,7 @@ for d_p in \$(vncserver  -list | grep ^: | cut -d: -f2 | cut -f 1,3 --output-del
       vncserver -kill  :\$d 1>/dev/null
     fi
 done
-vncserver -fg -geometry $geometry -rfbauth /marconi/home/userexternal/$user/.rcm/$user-slurm-$N.joblog.pwd -xstartup \${RCM_HOME}/bin/config/xstartup.fluxbox > /marconi/home/userexternal/$user/.rcm/$user-slurm-$N.joblog.vnc 2>&1
+vncserver -fg -geometry $geometry -SecurityTypes None -xstartup \${RCM_HOME}/bin/config/xstartup.fluxbox > /marconi/home/userexternal/$user/.rcm/$user-slurm-$N.joblog.vnc 2>&1
 EOT
 
     # Generate a new password for the vnc connection
@@ -169,6 +169,7 @@ EOT
 
 
 function connect_vnc() {
+    echo "WARNING: disabled vnc password due to issues with turbovnc"
     vncpass_crypt="$(ssh $HOST "cat ~/.rcm/$user-slurm-$N.joblog.pwd")"
     vnc_settings="$(ssh $HOST "cat ~/.rcm/$user-slurm-$N.joblog.vnc")"
     # this could be nicer
@@ -182,13 +183,22 @@ function connect_vnc() {
     if [ "$verbose" -ge 2 ]; then
         echo "screen number $screen_number"
     fi
-    localport=5999 # TODO: find a unused port
+    localport=8889
+    # find a unused port
+    while netstat -atwn | grep -q "^.*:${localport}.*:\*\s*LISTEN\s*$"
+    do
+        localport=$(( ${localport} + 1 ))
+    done
     ssh -fNL $localport:$job_hostname-hfi:59$screen_number $HOST
     if [ "$verbose" -ge 1 ]; then
         echo "Created SSH tunnel from localhost:$localport to $job_hostname-hfi.marconi.cineca.it:59$screen_number"
     fi
     vncpass_crypt_ascii="$(echo "$vncpass_crypt" | xxd -c 256 -ps)"
-    vncviewer -loglevel 150 localhost::$localport -EncPassword="$vncpass_crypt_ascii"
+    if [ "$verbose" -ge 1 ]; then
+        echo "Connecting vncviewer to localhost::$localport password $vncpass_crypt_ascii"
+    fi
+    #vncviewer -loglevel 150 localhost::$localport
+    vinagre localhost:$localport
 }
 
 
